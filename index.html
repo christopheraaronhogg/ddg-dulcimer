@@ -119,33 +119,31 @@ footer{font-size:11px;color:var(--dim);text-align:center;margin-top:14px}
 .ripple{fill:none;stroke:#ffe0b0;stroke-width:2.5;pointer-events:none;transform-box:fill-box;transform-origin:center;animation:rip .45s ease-out forwards}
 @keyframes rip{0%{opacity:.9;transform:scale(.15)}100%{opacity:0;transform:scale(1)}}
 
-/* Voicing options (colored chord shapes) */
-.voic{grid-column:1/-1;order:5;padding:10px 14px}
+/* Voicing options: one shape on the fretboard at a time, calm chip row to jump between them */
+.voic{grid-column:1/-1;order:5;padding:8px 12px;display:flex;align-items:center;gap:12px}
 .voic[hidden]{display:none}
-.vhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
-.vhead .lbl{margin:0}
-.vhead .lbl b{color:var(--ink);font-size:12px;letter-spacing:.6px}
-.vnext{padding:7px 12px;font-size:13px;white-space:nowrap}
-.vchips{display:flex;flex-wrap:wrap;gap:7px}
-.vchip{--c:#4fc3f7;display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:6px 11px 6px 8px;border-radius:999px;
-  background:rgba(0,0,0,.25);border:2px solid var(--c);font-size:13px;white-space:nowrap;transition:background .15s,transform .08s}
-.vchip:active{transform:scale(.95)}
-.vchip .vd{width:11px;height:11px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px rgba(0,0,0,.35)}
-.vchip b{font-family:Georgia,serif;font-size:14px}
-.vchip .vs{font-variant-numeric:tabular-nums;color:var(--muted);letter-spacing:.3px}
-.vchip.sel{background:var(--c);color:#140b05;box-shadow:0 0 14px var(--c)}
-.vchip.sel .vs{color:#140b05;font-weight:700}
-.vchip.sel .vd{background:#140b05;box-shadow:none}
+.vhead{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.vtitle{font-size:12px;color:var(--muted);min-width:96px;text-align:center;white-space:nowrap}
+.vtitle b{font-family:Georgia,serif;font-size:15px;color:var(--ink);margin-right:2px}
+.vnav{width:34px;height:32px;padding:0;font-size:20px;line-height:1;border-radius:10px}
+.vchips{display:flex;flex-wrap:wrap;gap:5px;min-width:0}
+.vchip{--c:#4fc3f7;display:flex;align-items:center;gap:5px;flex:0 0 auto;padding:3px 8px 3px 6px;border-radius:999px;
+  background:transparent;border:1px solid var(--line);font-size:12px;white-space:nowrap;color:var(--muted);transition:background .15s,border-color .15s}
+.vchip:hover{border-color:var(--c)}
+.vchip .vd{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.vchip b{font-size:11px;color:var(--dim);font-weight:600}
+.vchip .vs{font-variant-numeric:tabular-nums;letter-spacing:.3px}
+.vchip.sel{background:var(--c);border-color:var(--c);color:#140b05;font-weight:700}
+.vchip.sel b{color:#140b05}
+.vchip.sel .vd{background:#140b05}
+.pbtn.mine .sh::after{content:" ★";font-size:9px;opacity:.8}
 body.vert .side{min-width:0}
-body.vert .voic{order:0;padding:8px 9px;min-width:0;max-width:100%}
-body.vert .voic{display:flex;flex-direction:column;gap:6px}
-body.vert .vhead{display:contents}
-body.vert .vhead .lbl{order:0}
-body.vert .vchips{order:1}
-body.vert .vnext{order:2;padding:7px 9px;font-size:13px;width:100%}
-body.vert .vchips{flex-wrap:nowrap;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
-body.vert .vchip{scroll-snap-align:start;padding:5px 9px 5px 7px;font-size:12px}
-.ghostdot{pointer-events:none}
+body.vert .voic{order:0;padding:7px 8px;min-width:0;max-width:100%;flex-direction:column;align-items:stretch;gap:6px}
+body.vert .vhead{justify-content:space-between}
+body.vert .vtitle{min-width:0}
+body.vert .vchips{flex-wrap:nowrap;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:3px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+body.vert .vchips::-webkit-scrollbar{display:none}
+body.vert .vchip{scroll-snap-align:start}
 
 /* Phone portrait: vertical instrument beside the controls */
 body.vert .wrap{padding:10px 10px 22px}
@@ -193,7 +191,7 @@ body.vert .hint{display:none}
           <div class="chips" id="chordNotes"></div>
         </div>
         <div class="card panel voic" id="voicPanel" hidden>
-          <div class="vhead"><div class="lbl" id="voicTitle">Shapes</div><button class="ghost vnext" id="voicNext" title="Next shape (N)">Next shape ›</button></div>
+          <div class="vhead"><button class="ghost vnav" id="voicPrev" aria-label="Previous shape" title="Previous shape (←)">‹</button><div class="vtitle" id="voicTitle">Shapes</div><button class="ghost vnav" id="voicNext" aria-label="Next shape" title="Next shape (N / →)">›</button></div>
           <div class="vchips" id="voicChips" role="listbox" aria-label="Chord shape options"></div>
         </div>
         <div class="btns">
@@ -206,11 +204,11 @@ body.vert .hint{display:none}
         </div>
       </div>
     </div>
-    <div class="hint">Tap a fret to press it · tap it again (or the nut) to release · tap the strum hollow to pluck one string · swipe across the strings to strum · Space = strum · N = next shape</div>
+    <div class="hint">Tap a fret to press it · tap it again (or the nut) to release · tap the strum hollow to pluck one string · swipe across the strings to strum · Space = strum · N / ← → = change shape</div>
   </section>
 
   <section class="card presets">
-    <h2 id="presetTitle">Common chords in DDG <span>melody-middle-bass frets · tap to play &amp; see every shape</span></h2>
+    <h2 id="presetTitle">Common chords in DDG <span>melody-middle-bass frets · tap to play · ★ = your saved shape</span></h2>
     <div class="pgrid" id="pgrid"></div>
   </section>
 
@@ -541,13 +539,25 @@ body.vert .hint{display:none}
     return list;
   }
 
+  // ---- Remembered voicing per chord per tuning ----
+  function voicingKey(tuningKey, tuning, chord) {
+    var tk = (!tuningKey || tuningKey === 'custom') ? 'custom-' + tuning.join('.') : tuningKey;
+    return 'ddg-dulcimer:voicing:' + tk + ':' + chord;
+  }
+  // Index of a stored shape label in a voicing list, or -1 if missing/invalid (caller falls back).
+  function pickVoicing(list, stored) {
+    if (!stored || typeof stored !== 'string' || !list) return -1;
+    for (var i = 0; i < list.length; i++) if (list[i].shape === stored) return i;
+    return -1;
+  }
+
   var api = {
     NOTE_NAMES: NOTE_NAMES, FRETS: FRETS, FRET_INDEX: FRET_INDEX, TUNINGS: TUNINGS,
     pc: pc, noteName: noteName, noteNameOct: noteNameOct, midiToFreq: midiToFreq,
     soundingNotes: soundingNotes, recognize: recognize, findShapes: findShapes,
     fretLabel: fretLabel, parseShape: parseShape, commonShapes: commonShapes, DDG_SHAPES: DDG_SHAPES,
     parseSymbol: parseSymbol, baseSymbol: baseSymbol, verifyShape: verifyShape, COMMON_TARGETS: COMMON_TARGETS,
-    findVoicings: findVoicings, chordTones: chordTones, fretNum: fretNum
+    findVoicings: findVoicings, voicingKey: voicingKey, pickVoicing: pickVoicing, chordTones: chordTones, fretNum: fretNum
   };
   root.DulcimerCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -736,7 +746,6 @@ body.vert .hint{display:none}
       h.push('<path id="glow' + s + '" class="strglow" stroke-width="' + (widths[s] + 5) + '"/>');
       h.push('<path id="str' + s + '" class="str" stroke="' + plain + '" stroke-width="' + (widths[s] + 0.4) + '" filter="url(#soft)"/>');
     }
-    h.push('<g id="ghosts"></g>');   // faint dots for every alternate voicing
     // finger dots + badges
     for (s = 0; s < 3; s++) {
       h.push('<g class="finger" id="fing' + s + '"><g class="fi"><circle r="14" fill="url(#gFinger)" stroke="#fff" stroke-opacity=".85" stroke-width="2" filter="url(#soft)"/><text font-size="' + (vertical ? 12 : 11) + '"></text></g></g>');
@@ -745,7 +754,7 @@ body.vert .hint{display:none}
     }
     h.push('<g id="fx"></g>');
     svg.innerHTML = h.join('');
-    els = { str: [], glow: [], fing: [], badge: [], fx: svg.querySelector('#fx'), ghosts: svg.querySelector('#ghosts') };
+    els = { str: [], glow: [], fing: [], badge: [], fx: svg.querySelector('#fx') };
     for (s = 0; s < 3; s++) {
       els.str[s] = svg.querySelector('#str' + s);
       els.glow[s] = svg.querySelector('#glow' + s);
@@ -951,7 +960,8 @@ body.vert .hint{display:none}
     if (tag === 'SELECT' || tag === 'INPUT') return;
     if (e.code === 'Space') { e.preventDefault(); strum('down'); }
     else if (e.key === 'c' || e.key === 'C') clearAll();
-    else if (e.key === 'n' || e.key === 'N') nextVoicing();
+    else if (e.key === 'n' || e.key === 'N' || e.key === 'ArrowRight') nextVoicing(1);
+    else if (e.key === 'ArrowLeft') nextVoicing(-1);
   });
 
   /* ---------- panels ---------- */
@@ -1007,13 +1017,12 @@ body.vert .hint{display:none}
     if (!list.length) { setVoicings(null); return; }
     voic = { sym: sym, list: list, sel: 0 };
     list.forEach(function (v, i) { v.color = vColor(i); if (prefer && v.frets.join() === prefer.join()) voic.sel = i; });
-    voicTitle.innerHTML = '<b>' + sym + '</b> · ' + list.length + ' shape' + (list.length > 1 ? 's' : '');
     voicChips.innerHTML = '';
     list.forEach(function (v, i) {
       var b = document.createElement('button'); b.className = 'vchip'; b.setAttribute('role', 'option');
       b.style.setProperty('--c', v.color);
       b.title = v.label + ' — ' + v.notes.map(C.noteNameOct).join(' ') + (v.recognized && C.baseSymbol(v.recognized) !== sym ? ' (also reads as ' + v.recognized + ')' : '');
-      b.innerHTML = '<span class="vd"></span><b>' + v.label.replace(' (no5)', '<small> no5</small>') + '</b><span class="vs">' + v.shape + '</span>';
+      b.innerHTML = '<span class="vd"></span>' + (v.label !== sym ? '<b>' + v.label.replace(sym, '').replace(' (no5)', ' no5').trim() + '</b>' : '') + '<span class="vs">' + v.shape + '</span>';
       b.addEventListener('click', function () { initAudio(); selectVoicing(i); });
       voicChips.appendChild(b); v.el = b;
     });
@@ -1024,43 +1033,30 @@ body.vert .hint{display:none}
     for (var i = 0; i < voic.list.length; i++) if (voic.list[i].frets.join() === state.frets.join()) return i;
     return -1;
   }
+  function memGet(sym) { try { return localStorage.getItem(C.voicingKey(state.tuningKey, state.tuning, sym)); } catch (e) { return null; } }
+  function memSet(sym, shape) { try { localStorage.setItem(C.voicingKey(state.tuningKey, state.tuning, sym), shape); } catch (e) {} }
+  function memDel(sym) { try { localStorage.removeItem(C.voicingKey(state.tuningKey, state.tuning, sym)); } catch (e) {} }
+  function presetLabel(sh) {   // preset buttons show the remembered shape for that chord
+    if (!sh.el) return;
+    var cur = sh.cur || sh.frets, lab = C.fretLabel(cur), mine = lab !== sh.shape;
+    sh.el.querySelector('.sh').textContent = lab;
+    sh.el.classList.toggle('mine', mine);
+    sh.el.title = sh.name + ' \u2014 melody ' + lab.split('-')[0] + ', middle ' + lab.split('-')[1] + ', bass ' + lab.split('-')[2] + (mine ? ' (your saved shape; preset ' + sh.shape + ')' : '');
+  }
   function selectVoicing(i) {
     if (!voic) return;
     voic.sel = (i + voic.list.length) % voic.list.length;
+    var vv = voic.list[voic.sel];
+    memSet(voic.sym, vv.shape);
+    shapes.forEach(function (sh) { if (sh.name === voic.sym) { sh.cur = vv.frets.slice(); presetLabel(sh); } });
     state.frets = voic.list[voic.sel].frets.slice(); state.muted = [false, false, false];
     update(); strum('down');
     var el = voic.list[voic.sel].el;   // keep the chip visible without scrolling the page
     if (el) { var c = voicChips, l = el.offsetLeft - c.offsetLeft; if (l < c.scrollLeft || l + el.offsetWidth > c.scrollLeft + c.clientWidth) c.scrollTo({ left: l - 8, behavior: 'smooth' }); }
   }
-  function nextVoicing() { if (!voic) return; initAudio(); var m = matchedVoicing(); selectVoicing((m >= 0 ? m : voic.sel) + 1); }
-  $('#voicNext').addEventListener('click', nextVoicing);
-  function cellX(f) { return WIRE[f] - Math.max(9, (WIRE[f] - WIRE[f - 1]) * 0.36); }
-  function drawGhosts(match) {
-    if (!els.ghosts) return;
-    if (!voic) { els.ghosts.innerHTML = ''; return; }
-    var spots = {}, order = [];
-    voic.list.forEach(function (v, i) {
-      if (i === match) return;
-      for (var s = 0; s < 3; s++) {
-        var f = v.frets[s]; if (f <= 0) continue;
-        var k = s + ':' + f; if (!spots[k]) { spots[k] = { s: s, f: f, ids: [] }; order.push(k); } spots[k].ids.push(i);
-      }
-    });
-    var sel = match >= 0 ? voic.list[match].frets : null, h = [];
-    order.forEach(function (k) {
-      var sp = spots[k], cx = cellX(sp.f), lo = WIRE[sp.f - 1] + 6, hi = WIRE[sp.f] - 4, n = sp.ids.length;
-      var taken = sel && sel[sp.s] === sp.f, gr = vertical ? 7 : 5.2, gap = vertical ? 14.5 : 10.5;
-      sp.ids.forEach(function (id, j) {
-        var off;
-        if (taken) off = (j % 2 ? 1 : -1) * (14 + gr + 2 + Math.floor(j / 2) * gap);   // flank the big selected dot
-        else off = (j - (n - 1) / 2) * gap;
-        var x = Math.max(lo, Math.min(hi, cx + off));
-        h.push(circle(x, STR_Y[sp.s], gr, 'class="ghostdot" fill="' + voic.list[id].color + '" fill-opacity=".62" stroke="#140b05" stroke-opacity=".7" stroke-width="1.2"'));
-      });
-    });
-    els.ghosts.innerHTML = h.join('');
-  }
-
+  function nextVoicing(d) { if (!voic) return; initAudio(); var m = matchedVoicing(); selectVoicing((m >= 0 ? m : voic.sel) + (d === -1 ? -1 : 1)); }
+  $('#voicNext').addEventListener('click', function () { nextVoicing(1); });
+  $('#voicPrev').addEventListener('click', function () { nextVoicing(-1); });
   var shapes = [];
   function tuningName() {
     return state.tuningKey === 'custom' ? 'Custom (' + [2, 1, 0].map(function (s) { return C.noteNameOct(state.tuning[s]); }).join(' ') + ')' : state.tuningKey;
@@ -1083,10 +1079,19 @@ body.vert .hint{display:none}
       b.addEventListener('click', function () {
         initAudio();
         setVoicings(sh.name, sh.frets);
+        var k = voic ? C.pickVoicing(voic.list, memGet(sh.name)) : -1;
+        if (voic && k < 0 && memGet(sh.name)) memDel(sh.name);   // stale / invalid saved shape: forget it
+        if (voic) { selectVoicing(k >= 0 ? k : voic.sel); return; }
         state.frets = sh.frets.slice(); state.muted = [false, false, false];
         update(); strum('down');
       });
       pg.appendChild(b); sh.el = b;
+      var saved = memGet(sh.name);   // show the remembered shape on the button (if still valid)
+      if (saved && saved !== sh.shape) {
+        var vl = C.findVoicings(state.tuning, sh.name, { prefer: sh.frets }), ki = C.pickVoicing(vl, saved);
+        if (ki >= 0) sh.cur = vl[ki].frets.slice(); else memDel(sh.name);
+      }
+      presetLabel(sh);
     });
     update();
   }
@@ -1094,8 +1099,11 @@ body.vert .hint{display:none}
   var lastName = '', lastFing = [null, null, null];
   function update(noAnim) {
     var t = state.tuning, vm = matchedVoicing(), vcol = vm >= 0 ? voic.list[vm].color : null;
-    if (voic) voic.list.forEach(function (v, i) { if (v.el) { v.el.classList.toggle('sel', i === vm); v.el.setAttribute('aria-selected', i === vm); } });
-    drawGhosts(vm);
+    if (voic) {
+      voic.list.forEach(function (v, i) { if (v.el) { v.el.classList.toggle('sel', i === vm); v.el.setAttribute('aria-selected', i === vm); } });
+      var vn = vm >= 0 ? vm + 1 : '\u2013';
+      voicTitle.innerHTML = '<b>' + voic.sym + '</b> ' + (vertical ? vn + '/' + voic.list.length : 'shape ' + vn + ' of ' + voic.list.length);
+    }
     for (var s = 0; s < 3; s++) {
       var f = state.frets[s], m = state.muted[s], midi = t[s] + C.FRETS[f].semi;
       var fg = els.fing[s];
@@ -1149,7 +1157,7 @@ body.vert .hint{display:none}
       });
     }
     $('#chordNotes').innerHTML = chips;
-    shapes.forEach(function (sh) { if (sh.el) sh.el.classList.toggle('active', !state.muted.some(Boolean) && sh.frets.join() === state.frets.join()); });
+    shapes.forEach(function (sh) { if (sh.el) sh.el.classList.toggle('active', !state.muted.some(Boolean) && (sh.cur || sh.frets).join() === state.frets.join()); });
     pof.checked = state.pluckOnFret;
     save();
   }
