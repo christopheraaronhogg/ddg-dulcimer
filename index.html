@@ -137,6 +137,23 @@ footer{font-size:11px;color:var(--dim);text-align:center;margin-top:14px}
 .vchip.sel b{color:#140b05}
 .vchip.sel .vd{background:#140b05}
 .pbtn.mine .sh::after{content:" ★";font-size:9px;opacity:.8}
+/* Fake (approximate) chords: amber, dashed, tagged */
+.fakes h2{color:#ffcf7a}
+.pbtn.fake{position:relative;border:1.5px dashed rgba(255,179,0,.65);background:repeating-linear-gradient(135deg,rgba(255,179,0,.07) 0 6px,rgba(255,179,0,.02) 6px 12px)}
+.pbtn.fake:hover{border-color:#ffb300}
+.pbtn.fake.active{border-style:dashed;border-color:#ffb300;background:rgba(255,179,0,.2)}
+.pbtn.fake .sh{color:#ffd27a}
+.pbtn.fake .rc{color:#e0a95a}
+.ftag{font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.4px;color:#1b1003;background:#ffb300;border-radius:6px;padding:1px 5px;margin-left:4px;vertical-align:2px}
+.pbtn.fake{padding-top:19px}
+.pbtn .ftag{position:absolute;top:4px;left:50%;transform:translateX(-50%);margin:0;white-space:nowrap}
+.vchip.fake{border-style:dashed}
+.vchip.fake.sel{border:1.5px dashed #140b05;outline:2px solid var(--c)}
+.voic.fake{border:1.5px dashed rgba(255,179,0,.5)}
+.fakenote{margin-top:4px;padding:5px 8px;border:1.5px dashed rgba(255,179,0,.7);border-radius:9px;background:rgba(255,179,0,.09);color:#ffd894;font-size:13px;line-height:1.3}
+.fakenote[hidden]{display:none}
+.fakenote b{color:#fff3e2;font-family:Georgia,serif;font-size:15px}
+body.vert .fakenote{font-size:11.5px;padding:4px 6px}
 body.vert .side{min-width:0}
 body.vert .voic{order:0;padding:7px 8px;min-width:0;max-width:100%;flex-direction:column;align-items:stretch;gap:6px}
 body.vert .vhead{justify-content:space-between}
@@ -186,6 +203,7 @@ body.vert .hint{display:none}
         <div class="card panel chordp" aria-live="polite">
           <div class="lbl">Chord</div>
           <div class="chord-name" id="chordName">G5</div>
+          <div class="fakenote" id="fakeNote" hidden></div>
           <div class="chord-info" id="chordInfo"></div>
           <div class="chord-alt" id="chordAlt"></div>
           <div class="chips" id="chordNotes"></div>
@@ -210,6 +228,11 @@ body.vert .hint{display:none}
   <section class="card presets">
     <h2 id="presetTitle">Common chords in DDG <span>melody-middle-bass frets · tap to play · ★ = your saved shape</span></h2>
     <div class="pgrid" id="pgrid"></div>
+  </section>
+
+  <section class="card presets fakes" id="fakeSec" hidden>
+    <h2>Fake it (not exact) <span>these chords need notes the diatonic frets don’t have · closest stand-ins</span></h2>
+    <div class="pgrid" id="fgrid"></div>
   </section>
 
   <details class="card settings">
@@ -539,6 +562,59 @@ body.vert .hint{display:none}
     return list;
   }
 
+  // ---- "Fake it": substitutes for chords the diatonic fretboard cannot play ----
+  // A chord is unplayable when no voicing with root + 3rd exists (checked against the real
+  // fret notes incl. 6+ / 13+). Substitutes: power chord (root+5th), then sus4.
+  var FAKE_TARGETS = ['E', 'B', 'F#', 'C#', 'G#', 'Bb', 'Eb'];
+  var SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  var ROLE = { 0: 'root', 3: '3rd', 4: '3rd', 7: '5th' };
+  function reachablePcs(tuning, maxIdx) {
+    maxIdx = maxIdx == null ? FRET_INDEX['13+'] : maxIdx;
+    var set = {};
+    tuning.forEach(function (t) { for (var i = 0; i <= maxIdx; i++) set[pc(t + FRETS[i].semi)] = true; });
+    return set;
+  }
+  function fakeVoicings(tuning, sym, perSub) {
+    perSub = perSub || 6;
+    var t = parseSymbol(sym), tones = chordTones(t.quality), reach = reachablePcs(tuning);
+    var flat = /b/.test(sym.slice(1)) || sym === 'F';
+    var spell = function (p) { return flat ? NOTE_NAMES[p] : SHARPS[p]; };
+    var missing = tones.filter(function (iv) { return !reach[(t.root + iv) % 12]; })
+      .map(function (iv) { return { note: spell((t.root + iv) % 12), role: ROLE[iv] || INTERVAL_NAMES[iv] }; });
+    var miss = missing.map(function (m) { return 'no ' + m.note; }).join(', ') +
+      ', so no ' + missing.map(function (m) { return m.role; }).join(' or ');
+    var rootN = NOTE_NAMES[t.root], out = [];
+    [['5', function () { return 'playing ' + rootN + '5: ' + miss; }],
+     ['no5', function () { return 'playing ' + rootN + ' without its 5th: ' + miss.replace(/, so .*/, ''); }],
+     ['sus4', function () { return 'playing ' + rootN + 'sus4: ' + NOTE_NAMES[(t.root + 5) % 12] + ' stands in for the missing ' + missing.map(function (m) { return m.note + ' (' + m.role + ')'; }).join(', '); }]
+    ].forEach(function (q) {
+      if (q[0] === 'no5') {
+        findVoicings(tuning, sym, { max: perSub, includePartial: true }).forEach(function (v) {
+          if (v.full) return;
+          v.fake = true; v.sub = sym + ' (no5)'; v.note = q[1](); v.missing = missing; out.push(v);
+        });
+        return;
+      }
+      var sub = rootN + q[0];
+      findVoicings(tuning, sub, { max: perSub }).forEach(function (v) {
+        v.fake = true; v.sub = sub; v.note = q[1](); v.missing = missing; out.push(v);
+      });
+    });
+    return out;
+  }
+  function isPlayable(tuning, sym) { return findVoicings(tuning, sym, { minFull: 1 }).some(function (v) { return v.full; }); }
+  function fakeChords(tuning) {
+    var list = [];
+    FAKE_TARGETS.forEach(function (sym) {
+      if (isPlayable(tuning, sym)) return;                 // real chord exists: no fake needed
+      var vs = fakeVoicings(tuning, sym);
+      if (!vs.length) return;                              // no honest approximation: skip it
+      list.push({ name: sym, fake: true, frets: vs[0].frets.slice(), shape: vs[0].shape, recognized: vs[0].recognized,
+        sub: vs[0].sub, missing: vs[0].missing, subs: vs.map(function (v) { return v.sub; }).filter(function (x, i, a) { return a.indexOf(x) === i; }), ok: true });
+    });
+    return list;
+  }
+
   // ---- Remembered voicing per chord per tuning ----
   function voicingKey(tuningKey, tuning, chord) {
     var tk = (!tuningKey || tuningKey === 'custom') ? 'custom-' + tuning.join('.') : tuningKey;
@@ -557,7 +633,7 @@ body.vert .hint{display:none}
     soundingNotes: soundingNotes, recognize: recognize, findShapes: findShapes,
     fretLabel: fretLabel, parseShape: parseShape, commonShapes: commonShapes, DDG_SHAPES: DDG_SHAPES,
     parseSymbol: parseSymbol, baseSymbol: baseSymbol, verifyShape: verifyShape, COMMON_TARGETS: COMMON_TARGETS,
-    findVoicings: findVoicings, voicingKey: voicingKey, pickVoicing: pickVoicing, chordTones: chordTones, fretNum: fretNum
+    findVoicings: findVoicings, fakeVoicings: fakeVoicings, fakeChords: fakeChords, isPlayable: isPlayable, reachablePcs: reachablePcs, FAKE_TARGETS: FAKE_TARGETS, voicingKey: voicingKey, pickVoicing: pickVoicing, chordTones: chordTones, fretNum: fretNum
   };
   root.DulcimerCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -1011,18 +1087,23 @@ body.vert .hint{display:none}
   var voic = null;   // { sym, list[], sel }
   var voicPanel = $('#voicPanel'), voicChips = $('#voicChips'), voicTitle = $('#voicTitle');
   function vColor(i) { return VCOL[i % VCOL.length]; }
-  function setVoicings(sym, prefer) {
-    if (!sym) { voic = null; voicPanel.hidden = true; voicChips.innerHTML = ''; return; }
-    var list = C.findVoicings(state.tuning, sym, { prefer: prefer });
+  var FCOL = ['#ffb300', '#ff7043', '#ffe082', '#f4a261', '#ffd54f', '#ff8f00', '#ffab91', '#e9c46a', '#ffcc80', '#fb8c00', '#fff59d', '#d7a86e'];
+  function memId(sh) { return sh.fake ? sh.name + '~fake' : sh.name; }
+  function listFor(sh) { return sh.fake ? C.fakeVoicings(state.tuning, sh.name) : C.findVoicings(state.tuning, sh.name, { prefer: sh.frets }); }
+  function setVoicings(sh) {
+    if (!sh) { voic = null; voicPanel.hidden = true; voicPanel.classList.remove('fake'); voicChips.innerHTML = ''; return; }
+    var sym = sh.name, list = listFor(sh);
     if (!list.length) { setVoicings(null); return; }
-    voic = { sym: sym, list: list, sel: 0 };
-    list.forEach(function (v, i) { v.color = vColor(i); if (prefer && v.frets.join() === prefer.join()) voic.sel = i; });
+    voic = { sh: sh, sym: sym, key: memId(sh), fake: !!sh.fake, list: list, sel: 0 };
+    list.forEach(function (v, i) { v.color = sh.fake ? FCOL[i % FCOL.length] : vColor(i); if (v.frets.join() === sh.frets.join()) voic.sel = i; });
     voicChips.innerHTML = '';
+    voicPanel.classList.toggle('fake', voic.fake);
     list.forEach(function (v, i) {
-      var b = document.createElement('button'); b.className = 'vchip'; b.setAttribute('role', 'option');
+      var b = document.createElement('button'); b.className = 'vchip' + (v.fake ? ' fake' : ''); b.setAttribute('role', 'option');
       b.style.setProperty('--c', v.color);
-      b.title = v.label + ' — ' + v.notes.map(C.noteNameOct).join(' ') + (v.recognized && C.baseSymbol(v.recognized) !== sym ? ' (also reads as ' + v.recognized + ')' : '');
-      b.innerHTML = '<span class="vd"></span>' + (v.label !== sym ? '<b>' + v.label.replace(sym, '').replace(' (no5)', ' no5').trim() + '</b>' : '') + '<span class="vs">' + v.shape + '</span>';
+      b.title = v.label + ' \u2014 ' + v.notes.map(C.noteNameOct).join(' ') + (v.fake ? ' \u00b7 not a real ' + sym + ': ' + v.note : (v.recognized && C.baseSymbol(v.recognized) !== sym ? ' (also reads as ' + v.recognized + ')' : ''));
+      var tag = v.fake ? v.label.replace(' (no5)', ' no5') : (v.label !== sym ? v.label.replace(sym, '').replace(' (no5)', ' no5').trim() : '');
+      b.innerHTML = '<span class="vd"></span>' + (tag ? '<b>' + tag + '</b>' : '') + '<span class="vs">' + v.shape + '</span>';
       b.addEventListener('click', function () { initAudio(); selectVoicing(i); });
       voicChips.appendChild(b); v.el = b;
     });
@@ -1040,6 +1121,7 @@ body.vert .hint{display:none}
     if (!sh.el) return;
     var cur = sh.cur || sh.frets, lab = C.fretLabel(cur), mine = lab !== sh.shape;
     sh.el.querySelector('.sh').textContent = lab;
+    if (sh.fake) sh.el.querySelector('.rc').textContent = 'plays ' + (sh.curSub || sh.sub);
     sh.el.classList.toggle('mine', mine);
     sh.el.title = sh.name + ' \u2014 melody ' + lab.split('-')[0] + ', middle ' + lab.split('-')[1] + ', bass ' + lab.split('-')[2] + (mine ? ' (your saved shape; preset ' + sh.shape + ')' : '');
   }
@@ -1047,8 +1129,8 @@ body.vert .hint{display:none}
     if (!voic) return;
     voic.sel = (i + voic.list.length) % voic.list.length;
     var vv = voic.list[voic.sel];
-    memSet(voic.sym, vv.shape);
-    shapes.forEach(function (sh) { if (sh.name === voic.sym) { sh.cur = vv.frets.slice(); presetLabel(sh); } });
+    memSet(voic.key, vv.shape);
+    allShapes().forEach(function (sh) { if (memId(sh) === voic.key) { sh.cur = vv.frets.slice(); sh.curSub = vv.sub; presetLabel(sh); } });
     state.frets = voic.list[voic.sel].frets.slice(); state.muted = [false, false, false];
     update(); strum('down');
     var el = voic.list[voic.sel].el;   // keep the chip visible without scrolling the page
@@ -1057,7 +1139,30 @@ body.vert .hint{display:none}
   function nextVoicing(d) { if (!voic) return; initAudio(); var m = matchedVoicing(); selectVoicing((m >= 0 ? m : voic.sel) + (d === -1 ? -1 : 1)); }
   $('#voicNext').addEventListener('click', function () { nextVoicing(1); });
   $('#voicPrev').addEventListener('click', function () { nextVoicing(-1); });
-  var shapes = [];
+  var shapes = [], fakes = [];
+  function allShapes() { return shapes.concat(fakes); }
+  function makePreset(sh, container) {
+    var b = document.createElement('button'); b.className = 'pbtn' + (sh.ok ? '' : ' bad') + (sh.fake ? ' fake' : '');
+    var rc = sh.recognized.replace(/ \(power\)$/, '');
+    b.innerHTML = (sh.fake ? '<i class="ftag">\u2248 fake</i>' : '') + '<b>' + sh.name + '</b><span class="sh">' + sh.shape + '</span><span class="rc">' + (sh.fake ? 'plays ' + sh.sub : (rc !== sh.name ? rc : '')) + '</span>';
+    b.addEventListener('click', function () {
+      initAudio();
+      var id = memId(sh);
+      setVoicings(sh);
+      var k = voic ? C.pickVoicing(voic.list, memGet(id)) : -1;
+      if (voic && k < 0 && memGet(id)) memDel(id);   // stale / invalid saved shape: forget it
+      if (voic) { selectVoicing(k >= 0 ? k : voic.sel); return; }
+      state.frets = sh.frets.slice(); state.muted = [false, false, false];
+      update(); strum('down');
+    });
+    container.appendChild(b); sh.el = b;
+    var saved = memGet(memId(sh));   // show the remembered shape on the button (if still valid)
+    if (saved && saved !== sh.shape) {
+      var vl = listFor(sh), ki = C.pickVoicing(vl, saved);
+      if (ki >= 0) { sh.cur = vl[ki].frets.slice(); sh.curSub = vl[ki].sub; } else memDel(memId(sh));
+    }
+    presetLabel(sh);
+  }
   function tuningName() {
     return state.tuningKey === 'custom' ? 'Custom (' + [2, 1, 0].map(function (s) { return C.noteNameOct(state.tuning[s]); }).join(' ') + ')' : state.tuningKey;
   }
@@ -1071,38 +1176,24 @@ body.vert .hint{display:none}
     setVoicings(null);
     $('#presetTitle').firstChild.nodeValue = 'Common chords in ' + tuningName() + ' ';
     var pg = $('#pgrid'); pg.innerHTML = '';
-    shapes.forEach(function (sh) {
-      var b = document.createElement('button'); b.className = 'pbtn' + (sh.ok ? '' : ' bad');
-      var rc = sh.recognized.replace(/ \(power\)$/, '');
-      b.innerHTML = '<b>' + sh.name + '</b><span class="sh">' + sh.shape + '</span><span class="rc">' + (rc !== sh.name ? rc : '') + '</span>';
-      b.title = sh.name + ' — melody ' + sh.shape.split('-')[0] + ', middle ' + sh.shape.split('-')[1] + ', bass ' + sh.shape.split('-')[2];
-      b.addEventListener('click', function () {
-        initAudio();
-        setVoicings(sh.name, sh.frets);
-        var k = voic ? C.pickVoicing(voic.list, memGet(sh.name)) : -1;
-        if (voic && k < 0 && memGet(sh.name)) memDel(sh.name);   // stale / invalid saved shape: forget it
-        if (voic) { selectVoicing(k >= 0 ? k : voic.sel); return; }
-        state.frets = sh.frets.slice(); state.muted = [false, false, false];
-        update(); strum('down');
-      });
-      pg.appendChild(b); sh.el = b;
-      var saved = memGet(sh.name);   // show the remembered shape on the button (if still valid)
-      if (saved && saved !== sh.shape) {
-        var vl = C.findVoicings(state.tuning, sh.name, { prefer: sh.frets }), ki = C.pickVoicing(vl, saved);
-        if (ki >= 0) sh.cur = vl[ki].frets.slice(); else memDel(sh.name);
-      }
-      presetLabel(sh);
-    });
+    shapes.forEach(function (sh) { makePreset(sh, pg); });
+    fakes = C.fakeChords(state.tuning);
+    var fg = $('#fgrid'); fg.innerHTML = '';
+    fakes.forEach(function (sh) { makePreset(sh, fg); });
+    $('#fakeSec').hidden = !fakes.length;
     update();
   }
 
   var lastName = '', lastFing = [null, null, null];
   function update(noAnim) {
-    var t = state.tuning, vm = matchedVoicing(), vcol = vm >= 0 ? voic.list[vm].color : null;
+    var t = state.tuning, vm = matchedVoicing(), vcol = vm >= 0 ? voic.list[vm].color : null, vfake = vm >= 0 && voic.list[vm].fake;
+    var fn = $('#fakeNote');
+    if (vfake) { fn.hidden = false; fn.innerHTML = '\u2248 <b>' + voic.sym + '</b> (fake) \u2014 ' + voic.list[vm].note; }
+    else fn.hidden = true;
     if (voic) {
       voic.list.forEach(function (v, i) { if (v.el) { v.el.classList.toggle('sel', i === vm); v.el.setAttribute('aria-selected', i === vm); } });
       var vn = vm >= 0 ? vm + 1 : '\u2013';
-      voicTitle.innerHTML = '<b>' + voic.sym + '</b> ' + (vertical ? vn + '/' + voic.list.length : 'shape ' + vn + ' of ' + voic.list.length);
+      voicTitle.innerHTML = '<b>' + voic.sym + '</b>' + (voic.fake ? '<i class="ftag">\u2248</i>' : '') + ' ' + (vertical ? vn + '/' + voic.list.length : 'shape ' + vn + ' of ' + voic.list.length);
     }
     for (var s = 0; s < 3; s++) {
       var f = state.frets[s], m = state.muted[s], midi = t[s] + C.FRETS[f].semi;
@@ -1116,8 +1207,13 @@ body.vert .hint{display:none}
         if (wasHidden) { void fg.getBBox(); fg.style.transition = ''; }
         fg.style.opacity = 1;
         fg.querySelector('text').textContent = C.noteName(midi);
-        fg.querySelector('circle').setAttribute('fill', vcol || 'url(#gFinger)');
-        fg.querySelector('text').style.fill = vcol ? '#140b05' : '';
+        var fc = fg.querySelector('circle');
+        fc.setAttribute('fill', vfake ? '#2a1606' : (vcol || 'url(#gFinger)'));
+        fc.setAttribute('stroke', vfake ? vcol : '#fff');
+        fc.setAttribute('stroke-dasharray', vfake ? '5 3.5' : '');
+        fc.setAttribute('stroke-width', vfake ? 3 : 2);
+        fc.setAttribute('stroke-opacity', vfake ? 1 : 0.85);
+        fg.querySelector('text').style.fill = vfake ? vcol : (vcol ? '#140b05' : '');
         if (lastFing[s] !== key && !noAnim) { fg.classList.remove('pop'); void fg.getBBox(); fg.classList.add('pop'); }
       } else fg.style.opacity = 0;
       lastFing[s] = key;
@@ -1125,6 +1221,7 @@ body.vert .hint{display:none}
       bd.setAttribute('class', 'badge' + (m ? ' muted' : f > 0 ? ' fretted' : ''));
       bd.querySelector('text').textContent = m ? '\u2715' : C.noteName(t[s]);
       bd.querySelector('circle').style.stroke = (vcol && f === 0 && !m) ? vcol : '';
+      bd.querySelector('circle').style.strokeDasharray = (vfake && f === 0 && !m) ? '4 3' : '';
       els.str[s].setAttribute('class', 'str' + (m ? ' muted' : ''));
       if (!vib[s]) drawString(s, 0);
       // rows
@@ -1157,7 +1254,7 @@ body.vert .hint{display:none}
       });
     }
     $('#chordNotes').innerHTML = chips;
-    shapes.forEach(function (sh) { if (sh.el) sh.el.classList.toggle('active', !state.muted.some(Boolean) && (sh.cur || sh.frets).join() === state.frets.join()); });
+    allShapes().forEach(function (sh) { if (sh.el) sh.el.classList.toggle('active', !state.muted.some(Boolean) && (sh.cur || sh.frets).join() === state.frets.join()); });
     pof.checked = state.pluckOnFret;
     save();
   }
