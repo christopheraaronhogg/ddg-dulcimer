@@ -485,7 +485,10 @@ body.vert .hint{display:none}
   var svg = $('#inst');
 
   /* ---------- geometry helpers (instrument coords -> svg coords) ---------- */
-  function P(x, y) { return vertical ? [y, x] : [x, y]; }
+  // Vertical (phone) layout is mirrored across the string axis so the strings read
+  // left-to-right Melody - Middle - Bass (bass on the RIGHT). Desktop is unchanged.
+  var VW = 2 * YC;   // 300: vertical viewBox width
+  function P(x, y) { return vertical ? [VW - y, x] : [x, y]; }
   function pt(x, y) { var p = P(x, y); return p[0].toFixed(1) + ' ' + p[1].toFixed(1); }
   function path(segs) {
     return segs.map(function (s) {
@@ -496,6 +499,7 @@ body.vert .hint{display:none}
   }
   function rect(x, y, w, h, a) {
     var p = P(x, y), ww = vertical ? h : w, hh = vertical ? w : h;
+    if (vertical) p[0] -= ww;   // mirrored axis: the rect's far edge is now its left edge
     return '<rect x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '" width="' + ww.toFixed(1) + '" height="' + hh.toFixed(1) + '" ' + (a || '') + '/>';
   }
   function circle(x, y, r, a) { var p = P(x, y); return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + r + '" ' + (a || '') + '/>'; }
@@ -776,7 +780,7 @@ body.vert .hint{display:none}
   function toLocal(e) {
     var p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
     var q = p.matrixTransform(svg.getScreenCTM().inverse());
-    return vertical ? { x: q.y, y: q.x } : { x: q.x, y: q.y };
+    return vertical ? { x: q.y, y: VW - q.x } : { x: q.x, y: q.y };
   }
   function nearestString(y) {
     if (y < 98 || y > 202) return -1;
@@ -977,9 +981,14 @@ body.vert .hint{display:none}
     save();
   }
 
+  // Desktop: bass on top (matches the instrument). Phone: Melody, Middle, Bass (matches left-to-right).
+  function orderPanels() {
+    var ord = vertical ? [0, 1, 2] : [2, 1, 0];
+    ord.forEach(function (s) { if (rows[s]) stringsEl.appendChild(rows[s]); if (tSel[s]) tgrid.insertBefore(tSel[s].parentNode, chkLab); });
+  }
   function layout() {
     var v = window.innerWidth < 720 && window.innerHeight > window.innerWidth * 1.15;
-    if (v !== vertical || !els.str) { vertical = v; document.body.classList.toggle('vert', v); build(); }
+    if (v !== vertical || !els.str) { vertical = v; document.body.classList.toggle('vert', v); build(); orderPanels(); }
   }
   window.addEventListener('resize', layout);
   window.addEventListener('orientationchange', function () { setTimeout(layout, 150); });
