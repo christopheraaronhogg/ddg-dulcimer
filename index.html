@@ -119,6 +119,34 @@ footer{font-size:11px;color:var(--dim);text-align:center;margin-top:14px}
 .ripple{fill:none;stroke:#ffe0b0;stroke-width:2.5;pointer-events:none;transform-box:fill-box;transform-origin:center;animation:rip .45s ease-out forwards}
 @keyframes rip{0%{opacity:.9;transform:scale(.15)}100%{opacity:0;transform:scale(1)}}
 
+/* Voicing options (colored chord shapes) */
+.voic{grid-column:1/-1;order:5;padding:10px 14px}
+.voic[hidden]{display:none}
+.vhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.vhead .lbl{margin:0}
+.vhead .lbl b{color:var(--ink);font-size:12px;letter-spacing:.6px}
+.vnext{padding:7px 12px;font-size:13px;white-space:nowrap}
+.vchips{display:flex;flex-wrap:wrap;gap:7px}
+.vchip{--c:#4fc3f7;display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:6px 11px 6px 8px;border-radius:999px;
+  background:rgba(0,0,0,.25);border:2px solid var(--c);font-size:13px;white-space:nowrap;transition:background .15s,transform .08s}
+.vchip:active{transform:scale(.95)}
+.vchip .vd{width:11px;height:11px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+.vchip b{font-family:Georgia,serif;font-size:14px}
+.vchip .vs{font-variant-numeric:tabular-nums;color:var(--muted);letter-spacing:.3px}
+.vchip.sel{background:var(--c);color:#140b05;box-shadow:0 0 14px var(--c)}
+.vchip.sel .vs{color:#140b05;font-weight:700}
+.vchip.sel .vd{background:#140b05;box-shadow:none}
+body.vert .side{min-width:0}
+body.vert .voic{order:0;padding:8px 9px;min-width:0;max-width:100%}
+body.vert .voic{display:flex;flex-direction:column;gap:6px}
+body.vert .vhead{display:contents}
+body.vert .vhead .lbl{order:0}
+body.vert .vchips{order:1}
+body.vert .vnext{order:2;padding:7px 9px;font-size:13px;width:100%}
+body.vert .vchips{flex-wrap:nowrap;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+body.vert .vchip{scroll-snap-align:start;padding:5px 9px 5px 7px;font-size:12px}
+.ghostdot{pointer-events:none}
+
 /* Phone portrait: vertical instrument beside the controls */
 body.vert .wrap{padding:10px 10px 22px}
 body.vert h1{font-size:19px}
@@ -164,6 +192,10 @@ body.vert .hint{display:none}
           <div class="chord-alt" id="chordAlt"></div>
           <div class="chips" id="chordNotes"></div>
         </div>
+        <div class="card panel voic" id="voicPanel" hidden>
+          <div class="vhead"><div class="lbl" id="voicTitle">Shapes</div><button class="ghost vnext" id="voicNext" title="Next shape (N)">Next shape ›</button></div>
+          <div class="vchips" id="voicChips" role="listbox" aria-label="Chord shape options"></div>
+        </div>
         <div class="btns">
           <button class="strum" id="strumBtn">Strum<span>or swipe the strings</span></button>
           <button class="ghost" id="clearBtn">Clear</button>
@@ -174,11 +206,11 @@ body.vert .hint{display:none}
         </div>
       </div>
     </div>
-    <div class="hint">Tap a fret to press it · tap it again (or the nut) to release · tap the strum hollow to pluck one string · swipe across the strings to strum · Space = strum</div>
+    <div class="hint">Tap a fret to press it · tap it again (or the nut) to release · tap the strum hollow to pluck one string · swipe across the strings to strum · Space = strum · N = next shape</div>
   </section>
 
   <section class="card presets">
-    <h2 id="presetTitle">Common chords in DDG <span>melody-middle-bass frets · tap to play</span></h2>
+    <h2 id="presetTitle">Common chords in DDG <span>melody-middle-bass frets · tap to play &amp; see every shape</span></h2>
     <div class="pgrid" id="pgrid"></div>
   </section>
 
@@ -443,12 +475,79 @@ body.vert .hint{display:none}
     return list;
   }
 
+  // ---- Voicing generator: every playable fingering of a chord symbol in a tuning ----
+  // A voicing must use only chord tones, contain the root (+ the 3rd / 7th / sus tone),
+  // keep fretted notes within maxSpan frets (open strings are free) and use all 3 strings.
+  // Fingerings that sound identical pitches (melody<->middle swaps in DDG) are merged.
+  function fretNum(i) { var id = FRETS[i].id; return parseFloat(id) + (id.indexOf('+') >= 0 ? 0.5 : 0); }
+  function chordTones(quality) {
+    if (quality === '5') return [0, 7];
+    for (var i = 0; i < TEMPLATES.length; i++) if (TEMPLATES[i].q === quality && !TEMPLATES[i].omit) return TEMPLATES[i].iv.slice();
+    return null;
+  }
+  function findVoicings(tuning, symbol, opts) {
+    opts = opts || {};
+    var maxIdx = opts.maxIdx != null ? opts.maxIdx : FRET_INDEX['13+'];
+    var maxSpan = opts.maxSpan != null ? opts.maxSpan : 4;
+    var t = parseSymbol(symbol); if (t.root < 0 || !t.quality) return [];
+    var tones = chordTones(t.quality); if (!tones) return [];
+    var hasThird = tones.indexOf(3) >= 0 || tones.indexOf(4) >= 0;
+    var required = (hasThird && tones.length >= 3) ? tones.filter(function (x) { return x !== 7; }) : tones.slice();
+    var bySound = {}, list = [];
+    for (var a = 0; a <= maxIdx; a++) for (var b = 0; b <= maxIdx; b++) for (var c = 0; c <= maxIdx; c++) {
+      var fr = [a, b, c], ns = soundingNotes(tuning, fr), ok = true, ivs = [];
+      for (var k = 0; k < ns.length; k++) {
+        var iv = (pc(ns[k].midi) - t.root + 12) % 12;
+        if (tones.indexOf(iv) < 0) { ok = false; break; }
+        if (ivs.indexOf(iv) < 0) ivs.push(iv);
+      }
+      if (!ok || !required.every(function (x) { return ivs.indexOf(x) >= 0; })) continue;
+      var fn = fr.filter(function (x) { return x > 0; }).map(fretNum);
+      var span = fn.length ? Math.max.apply(null, fn) - Math.min.apply(null, fn) : 0;
+      if (span > maxSpan) continue;
+      var full = tones.every(function (x) { return ivs.indexOf(x) >= 0; }) || tones.length > 3;
+      var midis = ns.map(function (n) { return n.midi; }).sort(function (x, y) { return x - y; });
+      var bassPc = pc(midis[0]), rootBass = bassPc === t.root;
+      var top = fn.length ? Math.max.apply(null, fn) : 0;
+      var plus = fr.some(function (x) { return FRETS[x].id.indexOf('+') >= 0; });
+      var score = (full ? 0 : 200) + (rootBass ? 0 : 100) + top * 0.6 + span * 1 + (plus ? 0.5 : 0) +
+        (fr[0] >= fr[1] ? 0 : 0.05);                         // tie-break: melody-high (traditional) form
+      var v = { frets: fr, shape: fretLabel(fr), notes: midis, full: full, rootBass: rootBass, score: score,
+        label: symbol + (rootBass ? '' : '/' + NOTE_NAMES[bassPc]) + (full ? '' : ' (no5)'),
+        recognized: recognize(ns).name };
+      var key = midis.join(',');
+      if (bySound[key]) { if (score < bySound[key].score) { list[list.indexOf(bySound[key])] = v; bySound[key] = v; } continue; }
+      bySound[key] = v; list.push(v);
+    }
+    // Prefer full voicings; fall back to partial (no 5th) ones only when the chord has few full forms.
+    var fullList = list.filter(function (v) { return v.full; });
+    if (fullList.length >= (opts.minFull || 4) && !opts.includePartial) list = fullList;
+    list.sort(function (x, y) { return x.score - y.score; });
+    if (list.length > (opts.max || 12)) list = list.slice(0, opts.max || 12);
+    // Keep a curated preset fingering: it replaces the identical-sounding entry (or is added).
+    if (opts.prefer) {
+      var pn = soundingNotes(tuning, opts.prefer).map(function (n) { return n.midi; }).sort(function (x, y) { return x - y; }).join(',');
+      var hit = -1;
+      for (var q = 0; q < list.length; q++) if (list[q].notes.join(',') === pn) hit = q;
+      var pv = { frets: opts.prefer.slice(), shape: fretLabel(opts.prefer), notes: pn.split(',').map(Number), preset: true };
+      if (hit >= 0) { for (var kk in list[hit]) if (!(kk in pv)) pv[kk] = list[hit][kk]; list[hit] = pv; }
+      else {
+        var rn = recognize(soundingNotes(tuning, opts.prefer));
+        pv.full = true; pv.rootBass = rn.bass === t.root; pv.score = -1; pv.recognized = rn.name;
+        pv.label = symbol + (pv.rootBass ? '' : '/' + NOTE_NAMES[rn.bass]);
+        list.unshift(pv);
+      }
+    }
+    return list;
+  }
+
   var api = {
     NOTE_NAMES: NOTE_NAMES, FRETS: FRETS, FRET_INDEX: FRET_INDEX, TUNINGS: TUNINGS,
     pc: pc, noteName: noteName, noteNameOct: noteNameOct, midiToFreq: midiToFreq,
     soundingNotes: soundingNotes, recognize: recognize, findShapes: findShapes,
     fretLabel: fretLabel, parseShape: parseShape, commonShapes: commonShapes, DDG_SHAPES: DDG_SHAPES,
-    parseSymbol: parseSymbol, baseSymbol: baseSymbol, verifyShape: verifyShape, COMMON_TARGETS: COMMON_TARGETS
+    parseSymbol: parseSymbol, baseSymbol: baseSymbol, verifyShape: verifyShape, COMMON_TARGETS: COMMON_TARGETS,
+    findVoicings: findVoicings, chordTones: chordTones, fretNum: fretNum
   };
   root.DulcimerCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -637,6 +736,7 @@ body.vert .hint{display:none}
       h.push('<path id="glow' + s + '" class="strglow" stroke-width="' + (widths[s] + 5) + '"/>');
       h.push('<path id="str' + s + '" class="str" stroke="' + plain + '" stroke-width="' + (widths[s] + 0.4) + '" filter="url(#soft)"/>');
     }
+    h.push('<g id="ghosts"></g>');   // faint dots for every alternate voicing
     // finger dots + badges
     for (s = 0; s < 3; s++) {
       h.push('<g class="finger" id="fing' + s + '"><g class="fi"><circle r="14" fill="url(#gFinger)" stroke="#fff" stroke-opacity=".85" stroke-width="2" filter="url(#soft)"/><text font-size="' + (vertical ? 12 : 11) + '"></text></g></g>');
@@ -645,7 +745,7 @@ body.vert .hint{display:none}
     }
     h.push('<g id="fx"></g>');
     svg.innerHTML = h.join('');
-    els = { str: [], glow: [], fing: [], badge: [], fx: svg.querySelector('#fx') };
+    els = { str: [], glow: [], fing: [], badge: [], fx: svg.querySelector('#fx'), ghosts: svg.querySelector('#ghosts') };
     for (s = 0; s < 3; s++) {
       els.str[s] = svg.querySelector('#str' + s);
       els.glow[s] = svg.querySelector('#glow' + s);
@@ -851,10 +951,11 @@ body.vert .hint{display:none}
     if (tag === 'SELECT' || tag === 'INPUT') return;
     if (e.code === 'Space') { e.preventDefault(); strum('down'); }
     else if (e.key === 'c' || e.key === 'C') clearAll();
+    else if (e.key === 'n' || e.key === 'N') nextVoicing();
   });
 
   /* ---------- panels ---------- */
-  function clearAll() { state.frets = [0, 0, 0]; state.muted = [false, false, false]; update(); }
+  function clearAll() { state.frets = [0, 0, 0]; state.muted = [false, false, false]; setVoicings(null); update(); }
   $('#strumBtn').addEventListener('click', function () { strum('down'); });
   $('#clearBtn').addEventListener('click', clearAll);
 
@@ -895,6 +996,71 @@ body.vert .hint{display:none}
   var pof = chkLab.querySelector('input');
   pof.addEventListener('change', function () { state.pluckOnFret = pof.checked; save(); });
 
+  /* ---------- voicing options: every playable shape of the tapped chord, each in its own color ---------- */
+  var VCOL = ['#4fc3f7', '#aeea00', '#ffd600', '#ff4081', '#b388ff', '#1de9b6', '#ff6e40', '#eceff1', '#448aff', '#e040fb', '#69f0ae', '#ffab40'];
+  var voic = null;   // { sym, list[], sel }
+  var voicPanel = $('#voicPanel'), voicChips = $('#voicChips'), voicTitle = $('#voicTitle');
+  function vColor(i) { return VCOL[i % VCOL.length]; }
+  function setVoicings(sym, prefer) {
+    if (!sym) { voic = null; voicPanel.hidden = true; voicChips.innerHTML = ''; return; }
+    var list = C.findVoicings(state.tuning, sym, { prefer: prefer });
+    if (!list.length) { setVoicings(null); return; }
+    voic = { sym: sym, list: list, sel: 0 };
+    list.forEach(function (v, i) { v.color = vColor(i); if (prefer && v.frets.join() === prefer.join()) voic.sel = i; });
+    voicTitle.innerHTML = '<b>' + sym + '</b> · ' + list.length + ' shape' + (list.length > 1 ? 's' : '');
+    voicChips.innerHTML = '';
+    list.forEach(function (v, i) {
+      var b = document.createElement('button'); b.className = 'vchip'; b.setAttribute('role', 'option');
+      b.style.setProperty('--c', v.color);
+      b.title = v.label + ' — ' + v.notes.map(C.noteNameOct).join(' ') + (v.recognized && C.baseSymbol(v.recognized) !== sym ? ' (also reads as ' + v.recognized + ')' : '');
+      b.innerHTML = '<span class="vd"></span><b>' + v.label.replace(' (no5)', '<small> no5</small>') + '</b><span class="vs">' + v.shape + '</span>';
+      b.addEventListener('click', function () { initAudio(); selectVoicing(i); });
+      voicChips.appendChild(b); v.el = b;
+    });
+    voicPanel.hidden = false;
+  }
+  function matchedVoicing() {
+    if (!voic || state.muted.some(Boolean)) return -1;
+    for (var i = 0; i < voic.list.length; i++) if (voic.list[i].frets.join() === state.frets.join()) return i;
+    return -1;
+  }
+  function selectVoicing(i) {
+    if (!voic) return;
+    voic.sel = (i + voic.list.length) % voic.list.length;
+    state.frets = voic.list[voic.sel].frets.slice(); state.muted = [false, false, false];
+    update(); strum('down');
+    var el = voic.list[voic.sel].el;   // keep the chip visible without scrolling the page
+    if (el) { var c = voicChips, l = el.offsetLeft - c.offsetLeft; if (l < c.scrollLeft || l + el.offsetWidth > c.scrollLeft + c.clientWidth) c.scrollTo({ left: l - 8, behavior: 'smooth' }); }
+  }
+  function nextVoicing() { if (!voic) return; initAudio(); var m = matchedVoicing(); selectVoicing((m >= 0 ? m : voic.sel) + 1); }
+  $('#voicNext').addEventListener('click', nextVoicing);
+  function cellX(f) { return WIRE[f] - Math.max(9, (WIRE[f] - WIRE[f - 1]) * 0.36); }
+  function drawGhosts(match) {
+    if (!els.ghosts) return;
+    if (!voic) { els.ghosts.innerHTML = ''; return; }
+    var spots = {}, order = [];
+    voic.list.forEach(function (v, i) {
+      if (i === match) return;
+      for (var s = 0; s < 3; s++) {
+        var f = v.frets[s]; if (f <= 0) continue;
+        var k = s + ':' + f; if (!spots[k]) { spots[k] = { s: s, f: f, ids: [] }; order.push(k); } spots[k].ids.push(i);
+      }
+    });
+    var sel = match >= 0 ? voic.list[match].frets : null, h = [];
+    order.forEach(function (k) {
+      var sp = spots[k], cx = cellX(sp.f), lo = WIRE[sp.f - 1] + 6, hi = WIRE[sp.f] - 4, n = sp.ids.length;
+      var taken = sel && sel[sp.s] === sp.f, gr = vertical ? 7 : 5.2, gap = vertical ? 14.5 : 10.5;
+      sp.ids.forEach(function (id, j) {
+        var off;
+        if (taken) off = (j % 2 ? 1 : -1) * (14 + gr + 2 + Math.floor(j / 2) * gap);   // flank the big selected dot
+        else off = (j - (n - 1) / 2) * gap;
+        var x = Math.max(lo, Math.min(hi, cx + off));
+        h.push(circle(x, STR_Y[sp.s], gr, 'class="ghostdot" fill="' + voic.list[id].color + '" fill-opacity=".62" stroke="#140b05" stroke-opacity=".7" stroke-width="1.2"'));
+      });
+    });
+    els.ghosts.innerHTML = h.join('');
+  }
+
   var shapes = [];
   function tuningName() {
     return state.tuningKey === 'custom' ? 'Custom (' + [2, 1, 0].map(function (s) { return C.noteNameOct(state.tuning[s]); }).join(' ') + ')' : state.tuningKey;
@@ -906,6 +1072,7 @@ body.vert .hint{display:none}
     $('#subTune').textContent = state.tuningKey === 'custom' ? tuningName() :
       C.TUNINGS[state.tuningKey].label.replace(' \u2014 ', ' \u00b7 ');
     shapes = C.commonShapes(state.tuningKey, state.tuning);
+    setVoicings(null);
     $('#presetTitle').firstChild.nodeValue = 'Common chords in ' + tuningName() + ' ';
     var pg = $('#pgrid'); pg.innerHTML = '';
     shapes.forEach(function (sh) {
@@ -915,6 +1082,7 @@ body.vert .hint{display:none}
       b.title = sh.name + ' — melody ' + sh.shape.split('-')[0] + ', middle ' + sh.shape.split('-')[1] + ', bass ' + sh.shape.split('-')[2];
       b.addEventListener('click', function () {
         initAudio();
+        setVoicings(sh.name, sh.frets);
         state.frets = sh.frets.slice(); state.muted = [false, false, false];
         update(); strum('down');
       });
@@ -925,7 +1093,9 @@ body.vert .hint{display:none}
 
   var lastName = '', lastFing = [null, null, null];
   function update(noAnim) {
-    var t = state.tuning;
+    var t = state.tuning, vm = matchedVoicing(), vcol = vm >= 0 ? voic.list[vm].color : null;
+    if (voic) voic.list.forEach(function (v, i) { if (v.el) { v.el.classList.toggle('sel', i === vm); v.el.setAttribute('aria-selected', i === vm); } });
+    drawGhosts(vm);
     for (var s = 0; s < 3; s++) {
       var f = state.frets[s], m = state.muted[s], midi = t[s] + C.FRETS[f].semi;
       var fg = els.fing[s];
@@ -938,12 +1108,15 @@ body.vert .hint{display:none}
         if (wasHidden) { void fg.getBBox(); fg.style.transition = ''; }
         fg.style.opacity = 1;
         fg.querySelector('text').textContent = C.noteName(midi);
+        fg.querySelector('circle').setAttribute('fill', vcol || 'url(#gFinger)');
+        fg.querySelector('text').style.fill = vcol ? '#140b05' : '';
         if (lastFing[s] !== key && !noAnim) { fg.classList.remove('pop'); void fg.getBBox(); fg.classList.add('pop'); }
       } else fg.style.opacity = 0;
       lastFing[s] = key;
       var bd = els.badge[s];
       bd.setAttribute('class', 'badge' + (m ? ' muted' : f > 0 ? ' fretted' : ''));
       bd.querySelector('text').textContent = m ? '\u2715' : C.noteName(t[s]);
+      bd.querySelector('circle').style.stroke = (vcol && f === 0 && !m) ? vcol : '';
       els.str[s].setAttribute('class', 'str' + (m ? ' muted' : ''));
       if (!vib[s]) drawString(s, 0);
       // rows
@@ -994,7 +1167,8 @@ body.vert .hint{display:none}
   window.addEventListener('orientationchange', function () { setTimeout(layout, 150); });
   layout();
   onTuningChanged();
-  window.__dulcimer = { state: state, update: update, strum: strum, handleTap: handleTap };
+  window.__dulcimer = { state: state, update: update, strum: strum, handleTap: handleTap,
+    voicings: function () { return voic; }, selectVoicing: selectVoicing, nextVoicing: nextVoicing };
 })();
 </script>
 </body>
